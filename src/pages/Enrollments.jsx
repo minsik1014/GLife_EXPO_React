@@ -27,6 +27,7 @@ export default function Enrollments() {
   const [courseId, setCourseId] = useState("");
   const [loadingCourses, setLoadingCourses] = useState(false);
   const [rows, setRows] = useState(() => [makeRow()]);
+  const [statusValue, setStatusValue] = useState("enrolled"); // GLife 명세: status 기본값
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -100,12 +101,12 @@ export default function Enrollments() {
 
     const payloadRows = rows
       .map((row) => ({
-        employee_id: row.employeeId.trim(),
+        employeeId: row.employeeId.trim(),
         name: row.name.trim(),
         dept: row.dept.trim(),
         email: row.email.trim(),
       }))
-      .filter((row) => row.employee_id);
+      .filter((row) => row.employeeId);
 
     if (!payloadRows.length) {
       setError("최소 한 명 이상의 수강자를 입력해주세요.");
@@ -117,20 +118,17 @@ export default function Enrollments() {
     setMessage("");
 
     try {
-      await apiFetch(`/courses/courses/${courseId}/enroll`, {
+      // GLife 명세서 3.3: POST /api/courses/courses/{id}/enroll/
+      await apiFetch(`/courses/courses/${courseId}/enroll/`, {
         method: "POST",
         auth: true,
         body: {
-          employee_ids: payloadRows.map((row) => row.employee_id),
-          employees: payloadRows.map(({ employee_id, name, dept, email }) => ({
-            employee_id,
-            ...(name ? { name } : {}),
-            ...(dept ? { dept } : {}),
-            ...(email ? { email } : {}),
-          })),
+          employee_ids: payloadRows.map((row) => row.employeeId),
+          status: statusValue || undefined, // 명세 기본값은 enrolled, 필요 시 선택값 사용
         },
       });
       setRows([makeRow()]);
+      setStatusValue("enrolled");
       setMessage("수강자 등록이 완료되었습니다.");
     } catch (err) {
       console.error(err);
@@ -200,6 +198,21 @@ export default function Enrollments() {
           >
             목록 새로고침
           </button>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow p-4 space-y-3">
+          <div className="text-sm text-gray-600 font-medium">등록 상태</div>
+          <p className="text-xs text-gray-500">
+            {/* GLife 명세서 3.3: status 필드 예시 → "enrolled" 등 */}
+            전송 시 사용할 status 값을 지정하세요. 비워두면 기본값(enrolled)로 처리됩니다.
+          </p>
+          <input
+            type="text"
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+            value={statusValue}
+            onChange={(e) => setStatusValue(e.target.value)}
+            placeholder="enrolled"
+          />
         </div>
 
         <div className="bg-white rounded-2xl shadow overflow-hidden">
@@ -281,8 +294,8 @@ export default function Enrollments() {
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs text-gray-500">
-          <div>* 사번 또는 직원 ID는 필수입니다. 이름/부서/이메일은 선택 입력입니다.</div>
-          <div>※ 백엔드 스키마에 맞춰 필요한 경우 추가 필드를 확장할 수 있습니다.</div>
+          <div>* 사번 또는 직원 ID는 필수입니다. 이름/부서/이메일은 참고용이며 API에는 employee_ids만 전송됩니다.</div>
+          <div>※ GLife 명세 3.3과 달리 커스텀 필드가 필요하면 서버에서 확장 후 본 폼을 조정하세요.</div>
         </div>
 
         <div className="flex gap-2 justify-end">

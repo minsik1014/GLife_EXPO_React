@@ -105,15 +105,15 @@ export default function CourseProgress() {
       setLoadingList(true);
       setErr("");
       try {
-        // 1차 시도: /courses/enrollments?course_id=ID
+        // GLife 명세 4.1: GET /api/enrollments/ (course 필터 사용 가정)
         let data;
         try {
-          data = await apiFetch(`/courses/enrollments?course_id=${courseId}`, {
+          data = await apiFetch(`/enrollments/?course=${courseId}`, {
             method: "GET",
             auth: true,
           });
         } catch (e1) {
-          // 2차 시도: /courses/courses/ID/enrollments
+          // 대체 경로: /api/courses/courses/{id}/enrollments (백엔드 호환용)
           data = await apiFetch(`/courses/courses/${courseId}/enrollments`, {
             method: "GET",
             auth: true,

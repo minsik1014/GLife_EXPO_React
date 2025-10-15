@@ -216,14 +216,14 @@ export default function Home() {
 
         let enrollmentRaw = [];
         try {
-          // 기본 시도: /courses/enrollments?course_id=ID
-          enrollmentRaw = await apiFetch(`/courses/enrollments?course_id=${primaryCourse.id}`, {
+          // GLife 명세 4.1: GET /api/enrollments/ → course 필터 사용
+          enrollmentRaw = await apiFetch(`/enrollments/?course=${primaryCourse.id}`, {
             method: "GET",
             auth: true,
           });
         } catch (firstError) {
           try {
-            // 대체 경로: /courses/courses/{id}/enrollments
+            // 대체 경로: /api/courses/courses/{id}/enrollments
             enrollmentRaw = await apiFetch(`/courses/courses/${primaryCourse.id}/enrollments`, {
               method: "GET",
               auth: true,
