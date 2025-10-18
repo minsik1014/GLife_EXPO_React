@@ -95,7 +95,8 @@ export default function AppLayout() {
             type="button"
             className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition"
             onClick={() => {
-              localStorage.removeItem("token");
+              localStorage.removeItem("accessToken");
+              localStorage.removeItem("refreshToken");
               window.location.href = "/login";
             }}
           >

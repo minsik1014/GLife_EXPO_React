@@ -58,7 +58,7 @@ export default function UploadExcel(){
     try {
       // ❗ 백엔드 업로드 엔드포인트/바디에 맞게 수정하세요.
       // 예: POST /api/employees/upload/  body: { employees: [...] }
-      if(!localStorage.getItem("token")){
+      if(!localStorage.getItem("accessToken")){
         setErr("로그인이 필요합니다.");
         setLoading(false);
         return;
@@ -69,7 +69,7 @@ export default function UploadExcel(){
         { employees: rows },
         {
           withCredentials: true,
-          headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
+          headers: { "Authorization": `Bearer ${localStorage.getItem("accessToken")}` },
           timeout: 30000,
         }
       );

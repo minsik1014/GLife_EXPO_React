@@ -4,7 +4,7 @@ import { http, setAuthToken } from "./http";
  * JWT 로그인
  */
 export async function login({ biz_no, password }) {
-  const data = await http("/auth/login/", {
+  const data = await http("/organizations/login/", {
     method: "POST",
     body: { biz_no, password },
     auth: false,
@@ -16,7 +16,6 @@ export async function login({ biz_no, password }) {
 
   if (!access) throw new Error("로그인 실패: access token 없음");
 
-  setAuthToken(access);
   return { access, refresh, user };
 }
 

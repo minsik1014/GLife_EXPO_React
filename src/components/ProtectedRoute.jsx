@@ -11,7 +11,7 @@ export default function ProtectedRoute({ children }) {
     return children;
   }
 
-  const token = localStorage.getItem("token"); // 세션/쿠키 쓰면 서버 핑 방식으로 대체
+  const token = localStorage.getItem("accessToken"); // 세션/쿠키 쓰면 서버 핑 방식으로 대체
   if (!token) return <Navigate to="/login" replace />;
   return children;
 }

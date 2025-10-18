@@ -34,7 +34,10 @@ export default function LoginPage() {
       setLoading(true);
       const token = await login({ biz_no: cleanBizNo, password });
       // alert("로그인 성공");  // 시각적 알림 대신 페이지 전환
-      localStorage.setItem("token", token.access); // 세션/쿠키 쓰면 이 부분 제거
+      localStorage.setItem("accessToken", token.access);
+      if (token.refresh) {
+        localStorage.setItem("refreshToken", token.refresh);
+      }
       nav("/home", { replace: true });
     } catch (err) {
       const msg =

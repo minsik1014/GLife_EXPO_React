@@ -2,22 +2,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../lib/http";
 
-function ProgressBar({ value = 0 }) {
-  const v = Math.max(0, Math.min(100, Number(value) || 0));
-  return (
-    <div className="w-full h-2.5 bg-gray-200 rounded-full overflow-hidden">
-      <div
-        className="h-full bg-gray-900"
-        style={{ width: `${v}%` }}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={v}
-        role="progressbar"
-      />
-    </div>
-  );
-}
-
 /** 서버 → UI: 과정 매핑 (유연) */
 function toCourse(item) {
   return {
@@ -37,7 +21,6 @@ function toEnrollment(item) {
 
   const statusRaw = (item.status ?? item.state ?? "").toString().toLowerCase();
 
-  // 상태가 없으면 진행률로 분류 기준 설정
   let status = "not_started";
   if (typeof progress === "number") {
     if (progress >= 100) status = "completed";
@@ -49,16 +32,21 @@ function toEnrollment(item) {
   else if (statusRaw.includes("미수강") || statusRaw.includes("not")) status = "not_started";
 
   return {
-    id: item.id ?? item.enrollment_id ?? `${emp.id ?? emp.email ?? Math.random()}`,
+    id: item.id ?? item.enrollment_id ?? `${emp.id ?? Math.random()}`,
     employeePk: emp.id ?? item.employee_id ?? null,
     empNo: emp.emp_no ?? item.emp_no ?? null,
     name: emp.name ?? item.name ?? "이름없음",
     dept: emp.dept ?? emp.department ?? "",
-    email: emp.email ?? "",
     progress: Number(progress || 0),
     status,
   };
 }
+
+const STATUS_MAP = {
+  completed: { label: "수강 완료", className: "bg-green-100 text-green-800" },
+  in_progress: { label: "수강중", className: "bg-yellow-100 text-yellow-800" },
+  not_started: { label: "미수강", className: "bg-gray-100 text-gray-800" },
+};
 
 export default function CourseProgress() {
   const [courses, setCourses] = useState([]);
@@ -99,9 +87,9 @@ export default function CourseProgress() {
     return () => {
       ignore = true;
     };
-  }, []); // 최초 1회
+  }, []);
 
-  // 선택된 과정의 수강자 현황 불러오기
+  // 수강자 목록 + AI 평가 상태 함께 조회
   useEffect(() => {
     if (!courseId) {
       setEnrollments([]);
@@ -112,23 +100,41 @@ export default function CourseProgress() {
       setLoadingList(true);
       setErr("");
       try {
-        // GLife 명세 4.1: GET /api/enrollments/ (course 필터 사용 가정)
+        // 1. 기본 수강자 목록 조회
         let data;
         try {
-          data = await apiFetch(`/enrollments/?course=${courseId}`, {
-            method: "GET",
-            auth: true,
-          });
+          data = await apiFetch(`/enrollments/?course=${courseId}`, { method: "GET", auth: true });
         } catch (e1) {
-          // 대체 경로: /api/courses/courses/{id}/enrollments (백엔드 호환용)
-          data = await apiFetch(`/courses/courses/${courseId}/enrollments`, {
-            method: "GET",
-            auth: true,
-          });
+          data = await apiFetch(`/courses/courses/${courseId}/enrollments`, { method: "GET", auth: true });
         }
         const arr = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : [];
-        const mapped = arr.map(toEnrollment);
-        if (!ignore) setEnrollments(mapped);
+        const baseEnrollments = arr.map(toEnrollment);
+
+        if (ignore) return;
+
+        // 2. 각 수강자의 AI 평가 상태를 개별적으로 조회하여 상태 업데이트
+        const updatedEnrollments = await Promise.all(
+          baseEnrollments.map(async (en) => {
+            if (!en.empNo) return en;
+            try {
+              const evaluation = await apiFetch(
+                `/organizations/${encodeURIComponent(en.empNo)}/`,
+                { method: "GET", auth: false }
+              );
+              if (evaluation.status === true) {
+                return { ...en, status: 'completed' };
+              }
+              return en; // AI 평가 상태가 true가 아니면 기존 상태 유지
+            } catch (err) {
+              console.error(`Failed to fetch AI status for ${en.empNo}`, err);
+              return en; // 에러 발생 시 기존 정보 반환
+            }
+          })
+        );
+
+        if (!ignore) {
+          setEnrollments(updatedEnrollments);
+        }
       } catch (e) {
         console.error(e);
         if (!ignore) {
@@ -144,18 +150,21 @@ export default function CourseProgress() {
     };
   }, [courseId]);
 
+  // '미수강'과 '수강완료'로만 그룹화
   const grouped = useMemo(() => {
     const ns = [];
-    const ip = [];
     const cp = [];
     for (const e of enrollments) {
-      if (e.status === "completed") cp.push(e);
-      else if (e.status === "in_progress") ip.push(e);
-      else ns.push(e);
+      if (e.status === "completed") {
+        cp.push(e);
+      } else {
+        ns.push(e);
+      }
     }
-    return { not_started: ns, in_progress: ip, completed: cp };
+    return { not_started: ns, completed: cp };
   }, [enrollments]);
 
+  // 상세 정보 불러오기 (직원 정보 + AI 평가)
   useEffect(() => {
     if (!detailOpen || !selectedEnrollment) return;
     let ignore = false;
@@ -164,85 +173,47 @@ export default function CourseProgress() {
       setDetailError("");
       setEmployeeDetail(null);
       setEvaluationDetail(null);
+
+      // 직원 정보 조회
       try {
         let employeeData = null;
         if (selectedEnrollment.employeePk) {
-          try {
-            employeeData = await apiFetch(`/organizations/employees/${selectedEnrollment.employeePk}/`, {
-              method: "GET",
-              auth: true,
-            });
-          } catch (employeeErr) {
-            console.error(employeeErr);
-            if (!ignore) {
-              setDetailError((prev) =>
-                prev ? prev : "직원 상세 정보를 불러오는 중 오류가 발생했습니다.",
-              );
-            }
-          }
+          employeeData = await apiFetch(`/organizations/employees/${selectedEnrollment.employeePk}/`, { method: "GET", auth: true });
         } else if (selectedEnrollment.empNo) {
-          try {
-            const list = await apiFetch(
-              `/organizations/employees/?emp_no=${encodeURIComponent(selectedEnrollment.empNo)}`,
-              { method: "GET", auth: true },
-            );
-            if (Array.isArray(list?.results) && list.results.length) employeeData = list.results[0];
-            else if (Array.isArray(list) && list.length) employeeData = list[0];
-          } catch (employeeListErr) {
-            console.error(employeeListErr);
-            if (!ignore) {
-              setDetailError((prev) =>
-                prev ? prev : "직원 상세 정보를 불러오는 중 오류가 발생했습니다.",
-              );
-            }
-          }
+          const list = await apiFetch(`/organizations/employees/?emp_no=${encodeURIComponent(selectedEnrollment.empNo)}`, { method: "GET", auth: true });
+          if (Array.isArray(list?.results) && list.results.length) employeeData = list.results[0];
+          else if (Array.isArray(list) && list.length) employeeData = list[0];
         }
-
         if (!ignore) {
-          setEmployeeDetail(
-            employeeData ?? {
-              name: selectedEnrollment.name,
-              dept: selectedEnrollment.dept,
-              email: selectedEnrollment.email,
-              emp_no: selectedEnrollment.empNo ?? "-",
-            },
-          );
+          setEmployeeDetail(employeeData ?? {
+            name: selectedEnrollment.name,
+            dept: selectedEnrollment.dept,
+            emp_no: selectedEnrollment.empNo ?? "-",
+          });
         }
+      } catch (e) {
+        console.error(e);
+        if (!ignore) setDetailError("직원 상세 정보를 불러오는 중 오류가 발생했습니다.");
+      }
 
-        if (selectedEnrollment.empNo) {
-          try {
-            const evaluation = await apiFetch(
-              `/ai/evaluate/?empNo=${encodeURIComponent(selectedEnrollment.empNo)}`,
-              { method: "GET", auth: false },
-            );
-            if (!ignore) setEvaluationDetail(evaluation);
-          } catch (evaluationErr) {
-            console.error(evaluationErr);
-            try {
-              const evaluationFallback = await apiFetch("/ai/evaluate/", {
-                method: "POST",
-                auth: false,
-                body: {
-                  motionName: "fire_extinguisher_lift",
-                  empNo: selectedEnrollment.empNo,
-                  sensorData: [],
-                },
-              });
-              if (!ignore) setEvaluationDetail(evaluationFallback);
-            } catch (postErr) {
-              console.error(postErr);
-              if (!ignore) {
-                setDetailError((prev) =>
-                  prev
-                    ? prev
-                    : "AI 평가 정보를 불러오는 중 오류가 발생했습니다. 평가 데이터가 없을 수 있습니다.",
-                );
-              }
-            }
+      // AI 평가 정보 조회
+      if (selectedEnrollment.empNo) {
+        try {
+          const evaluation = await apiFetch(
+            `/organizations/${encodeURIComponent(selectedEnrollment.empNo)}/`,
+            { method: "GET", auth: false }
+          );
+          if (!ignore) {
+            setEvaluationDetail(evaluation);
           }
+        } catch (err) {
+          console.error("Failed to fetch AI evaluation in modal", err);
+          if (!ignore) setDetailError((prev) => prev || "AI 평가 정보를 불러오는 데 실패했습니다.");
         }
-      } finally {
-        if (!ignore) setDetailLoading(false);
+      }
+
+      if (!ignore) {
+        setDetailLoading(false);
       }
     })();
     return () => {
@@ -260,7 +231,7 @@ export default function CourseProgress() {
 
   return (
     <div className="space-y-6">
-      {/* 헤더: 과정 선택 */}
+      {/* 헤더 */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="text-lg font-semibold">교육 수강 현황</div>
         <div className="flex items-center gap-2 sm:ml-auto">
@@ -280,7 +251,6 @@ export default function CourseProgress() {
         </div>
       </div>
 
-      {/* 에러/로딩 */}
       {err && (
         <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
           {err}
@@ -305,8 +275,7 @@ export default function CourseProgress() {
                 <tr>
                   <th className="py-2 pr-4">이름</th>
                   <th className="py-2 pr-4">부서</th>
-                  <th className="py-2 pr-4">이메일</th>
-                  <th className="py-2 pr-4 w-64">진행률</th>
+                  <th className="py-2 pr-4">수강 현황</th>
                 </tr>
               </thead>
               <tbody>
@@ -325,14 +294,10 @@ export default function CourseProgress() {
                       </button>
                     </td>
                     <td className="py-2 pr-4">{e.dept}</td>
-                    <td className="py-2 pr-4">{e.email}</td>
                     <td className="py-2 pr-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-48">
-                          <ProgressBar value={e.progress} />
-                        </div>
-                        <span className="tabular-nums">{Math.round(e.progress)}%</span>
-                      </div>
+                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${e.status === 'completed' ? STATUS_MAP.completed.className : STATUS_MAP.not_started.className}`}>
+                        {e.status === 'completed' ? STATUS_MAP.completed.label : STATUS_MAP.not_started.label}
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -342,8 +307,8 @@ export default function CourseProgress() {
         )}
       </div>
 
-      {/* 상태별 분류 섹션 */}
-      <div className="grid sm:grid-cols-3 gap-4">
+      {/* 상태별 분류 섹션 (수강중 제거) */}
+      <div className="grid sm:grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl shadow p-4">
           <div className="font-medium mb-2">미수강</div>
           {grouped.not_started.length === 0 ? (
@@ -354,24 +319,6 @@ export default function CourseProgress() {
                 <li key={p.id}>
                   {p.name}
                   {p.dept ? <span className="text-gray-500"> · {p.dept}</span> : null}
-                  {p.email ? <span className="text-gray-400"> · {p.email}</span> : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="bg-white rounded-2xl shadow p-4">
-          <div className="font-medium mb-2">수강중</div>
-          {grouped.in_progress.length === 0 ? (
-            <div className="text-sm text-gray-500">없음</div>
-          ) : (
-            <ul className="space-y-1 text-sm">
-              {grouped.in_progress.map((p) => (
-                <li key={p.id}>
-                  {p.name}
-                  {p.dept ? <span className="text-gray-500"> · {p.dept}</span> : null}
-                  {p.email ? <span className="text-gray-400"> · {p.email}</span> : null}
                 </li>
               ))}
             </ul>
@@ -388,7 +335,6 @@ export default function CourseProgress() {
                 <li key={p.id}>
                   {p.name}
                   {p.dept ? <span className="text-gray-500"> · {p.dept}</span> : null}
-                  {p.email ? <span className="text-gray-400"> · {p.email}</span> : null}
                 </li>
               ))}
             </ul>
@@ -396,10 +342,11 @@ export default function CourseProgress() {
         </div>
       </div>
 
+      {/* 상세 정보 모달 */}
       {detailOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
           <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={handleCloseDetail} />
-          <div className="relative z-10 w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-slate-200">
+          <div className="relative z-10 w-full max-w-lg rounded-2xl bg-white shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between px-6 py-4 border-b">
               <div>
                 <div className="text-sm text-gray-500">수강자 상세</div>
@@ -447,9 +394,11 @@ export default function CourseProgress() {
                     </div>
                   </div>
                   <div>
-                    <span className="text-gray-500">이메일</span>
-                    <div className="font-medium text-gray-800 break-all">
-                      {employeeDetail?.email ?? selectedEnrollment?.email ?? "-"}
+                    <span className="text-gray-500">수강 현황</span>
+                    <div className="font-medium text-gray-800">
+                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${selectedEnrollment?.status === 'completed' ? STATUS_MAP.completed.className : STATUS_MAP.not_started.className}`}>
+                        {selectedEnrollment?.status === 'completed' ? STATUS_MAP.completed.label : STATUS_MAP.not_started.label}
+                      </span>
                     </div>
                   </div>
                   {employeeDetail?.phone && (
@@ -468,8 +417,7 @@ export default function CourseProgress() {
                     <div className="flex justify-between">
                       <span className="text-gray-500">모션</span>
                       <span className="font-medium text-gray-800">
-                        {evaluationDetail?.evaluation?.evaluator_motion_name ??
-                          evaluationDetail?.motionName ??
+                        {evaluationDetail.motion_type ??
                           "-"}
                       </span>
                     </div>
@@ -479,12 +427,7 @@ export default function CourseProgress() {
                         {evaluationDetail?.evaluation?.score ?? evaluationDetail?.score ?? "-"}
                       </span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">상세</span>
-                      <span className="text-right text-gray-700">
-                        {evaluationDetail?.detail ?? evaluationDetail?.message ?? "-"}
-                      </span>
-                    </div>
+
                     {evaluationDetail?.evaluation?.normalized_distance !== undefined && (
                       <div className="flex justify-between">
                         <span className="text-gray-500">정규화 거리</span>
@@ -499,8 +442,8 @@ export default function CourseProgress() {
                     {detailLoading
                       ? "평가 정보를 불러오는 중입니다…"
                       : selectedEnrollment?.empNo
-                      ? "평가 데이터가 없습니다."
-                      : "사번 정보가 없어 평가 데이터를 조회할 수 없습니다."}
+                        ? "평가 데이터가 없습니다."
+                        : "사번 정보가 없어 평가 데이터를 조회할 수 없습니다."}
                   </div>
                 )}
               </section>

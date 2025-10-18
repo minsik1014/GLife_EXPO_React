@@ -95,10 +95,10 @@ export default function Enrollments() {
       return;
     }
 
-    const employeeIds = rows.map((row) => row.employeeId.trim()).filter(Boolean);
+    const empNosToEnroll = rows.map((row) => row.employeeId.trim()).filter(Boolean);
 
-    if (!employeeIds.length) {
-      setError("최소 한 명 이상의 수강자를 입력해주세요.");
+    if (!empNosToEnroll.length) {
+      setError("최소 한 명 이상의 수강자 사번을 입력해주세요.");
       return;
     }
 
@@ -107,19 +107,51 @@ export default function Enrollments() {
     setMessage("");
 
     try {
-      // GLife 명세서 3.3: POST /api/courses/courses/{id}/enroll/
+      // 1. 전체 직원 목록을 가져와서 '사번 -> id' 맵 생성
+      const employeeData = await apiFetch("/organizations/employees/");
+      const allEmployees = Array.isArray(employeeData) ? employeeData : (Array.isArray(employeeData?.results) ? employeeData.results : []);
+      const empNoToIdMap = new Map(allEmployees.map(emp => [emp.emp_no, emp.id]));
+
+      // 2. 입력된 사번을 실제 직원 ID(PK)로 변환
+      const employeeIds = [];
+      const notFoundEmpNos = [];
+
+      for (const empNo of empNosToEnroll) {
+        if (empNoToIdMap.has(empNo)) {
+          employeeIds.push(empNoToIdMap.get(empNo));
+        } else {
+          notFoundEmpNos.push(empNo);
+        }
+      }
+
+      // 3. 찾지 못한 사번이 있으면 에러 처리
+      if (notFoundEmpNos.length > 0) {
+        setError(`다음 사번을 찾을 수 없습니다: ${notFoundEmpNos.join(", ")}`);
+        setSaving(false);
+        return;
+      }
+
+      if (employeeIds.length === 0) {
+        setError("유효한 사번이 없습니다.");
+        setSaving(false);
+        return;
+      }
+
+      // 4. 유효한 ID 목록으로 수강 등록 API 호출
       await apiFetch(`/courses/courses/${courseId}/enroll/`, {
         method: "POST",
         auth: true,
         body: {
           employee_ids: employeeIds,
+          status: false,
         },
       });
+
       setRows([makeRow()]);
       setMessage("수강자 등록이 완료되었습니다.");
     } catch (err) {
       console.error(err);
-      setError("수강자 등록 중 오류가 발생했습니다.");
+      setError(err.message || "수강자 등록 중 오류가 발생했습니다.");
     } finally {
       setSaving(false);
     }
