@@ -25,7 +25,7 @@ export default function AppLayout() {
 
   return (
     <div className="min-h-screen bg-slate-900 flex">
-      <aside className="w-64 shrink-0 bg-slate-900 text-white px-6 py-8 hidden lg:flex flex-col gap-8">
+      <aside className="hidden lg:flex lg:fixed lg:inset-y-0 lg:z-40 w-64 shrink-0 bg-slate-900 text-white px-6 py-8 flex-col gap-8 overflow-y-auto">
         <NavLink to="/home" className="flex items-center gap-3 group transition hover:text-white">
           <div className="h-10 w-10 rounded-2xl bg-white/10 flex items-center justify-center text-lg font-semibold group-hover:bg-white/20">
             GL
@@ -46,7 +46,7 @@ export default function AppLayout() {
 
         <div className="mt-auto text-xs text-white/40 space-y-1">
           <div>© {new Date().getFullYear()} GLife</div>
-          <div>안전 교육 통합 관리 시스템</div>
+          <div>산업안전 교육 관리 플랫폼</div>
         </div>
       </aside>
 
@@ -85,7 +85,7 @@ export default function AppLayout() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-screen bg-slate-100 lg:ml-0 pt-20 lg:pt-0">
+      <div className="flex-1 min-h-screen bg-slate-100 lg:ml-64 pt-20 lg:pt-0">
         <header className="hidden lg:flex items-center justify-between px-10 py-6 bg-slate-900/5 backdrop-blur">
           <div>
             <div className="text-sm text-slate-500">안전 교육 현황</div>

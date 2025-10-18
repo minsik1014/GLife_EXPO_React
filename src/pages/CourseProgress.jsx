@@ -50,6 +50,8 @@ function toEnrollment(item) {
 
   return {
     id: item.id ?? item.enrollment_id ?? `${emp.id ?? emp.email ?? Math.random()}`,
+    employeePk: emp.id ?? item.employee_id ?? null,
+    empNo: emp.emp_no ?? item.emp_no ?? null,
     name: emp.name ?? item.name ?? "이름없음",
     dept: emp.dept ?? emp.department ?? "",
     email: emp.email ?? "",
@@ -66,6 +68,12 @@ export default function CourseProgress() {
   const [err, setErr] = useState("");
 
   const [enrollments, setEnrollments] = useState([]);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedEnrollment, setSelectedEnrollment] = useState(null);
+  const [employeeDetail, setEmployeeDetail] = useState(null);
+  const [evaluationDetail, setEvaluationDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
 
   // 과정 목록 불러오기
   useEffect(() => {
@@ -75,7 +83,6 @@ export default function CourseProgress() {
       setErr("");
       try {
         const data = await apiFetch("/courses/courses/", { method: "GET", auth: true });
-        console.log(`data: ${data}`);
         const arr = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : [];
         const mapped = arr.map(toCourse);
         if (!ignore) {
@@ -149,6 +156,108 @@ export default function CourseProgress() {
     return { not_started: ns, in_progress: ip, completed: cp };
   }, [enrollments]);
 
+  useEffect(() => {
+    if (!detailOpen || !selectedEnrollment) return;
+    let ignore = false;
+    (async () => {
+      setDetailLoading(true);
+      setDetailError("");
+      setEmployeeDetail(null);
+      setEvaluationDetail(null);
+      try {
+        let employeeData = null;
+        if (selectedEnrollment.employeePk) {
+          try {
+            employeeData = await apiFetch(`/organizations/employees/${selectedEnrollment.employeePk}/`, {
+              method: "GET",
+              auth: true,
+            });
+          } catch (employeeErr) {
+            console.error(employeeErr);
+            if (!ignore) {
+              setDetailError((prev) =>
+                prev ? prev : "직원 상세 정보를 불러오는 중 오류가 발생했습니다.",
+              );
+            }
+          }
+        } else if (selectedEnrollment.empNo) {
+          try {
+            const list = await apiFetch(
+              `/organizations/employees/?emp_no=${encodeURIComponent(selectedEnrollment.empNo)}`,
+              { method: "GET", auth: true },
+            );
+            if (Array.isArray(list?.results) && list.results.length) employeeData = list.results[0];
+            else if (Array.isArray(list) && list.length) employeeData = list[0];
+          } catch (employeeListErr) {
+            console.error(employeeListErr);
+            if (!ignore) {
+              setDetailError((prev) =>
+                prev ? prev : "직원 상세 정보를 불러오는 중 오류가 발생했습니다.",
+              );
+            }
+          }
+        }
+
+        if (!ignore) {
+          setEmployeeDetail(
+            employeeData ?? {
+              name: selectedEnrollment.name,
+              dept: selectedEnrollment.dept,
+              email: selectedEnrollment.email,
+              emp_no: selectedEnrollment.empNo ?? "-",
+            },
+          );
+        }
+
+        if (selectedEnrollment.empNo) {
+          try {
+            const evaluation = await apiFetch(
+              `/ai/evaluate/?empNo=${encodeURIComponent(selectedEnrollment.empNo)}`,
+              { method: "GET", auth: false },
+            );
+            if (!ignore) setEvaluationDetail(evaluation);
+          } catch (evaluationErr) {
+            console.error(evaluationErr);
+            try {
+              const evaluationFallback = await apiFetch("/ai/evaluate/", {
+                method: "POST",
+                auth: false,
+                body: {
+                  motionName: "fire_extinguisher_lift",
+                  empNo: selectedEnrollment.empNo,
+                  sensorData: [],
+                },
+              });
+              if (!ignore) setEvaluationDetail(evaluationFallback);
+            } catch (postErr) {
+              console.error(postErr);
+              if (!ignore) {
+                setDetailError((prev) =>
+                  prev
+                    ? prev
+                    : "AI 평가 정보를 불러오는 중 오류가 발생했습니다. 평가 데이터가 없을 수 있습니다.",
+                );
+              }
+            }
+          }
+        }
+      } finally {
+        if (!ignore) setDetailLoading(false);
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, [detailOpen, selectedEnrollment]);
+
+  function handleCloseDetail() {
+    setDetailOpen(false);
+    setSelectedEnrollment(null);
+    setEmployeeDetail(null);
+    setEvaluationDetail(null);
+    setDetailError("");
+  }
+
   return (
     <div className="space-y-6">
       {/* 헤더: 과정 선택 */}
@@ -203,7 +312,18 @@ export default function CourseProgress() {
               <tbody>
                 {enrollments.map((e) => (
                   <tr key={e.id} className="border-t">
-                    <td className="py-2 pr-4">{e.name}</td>
+                    <td className="py-2 pr-4">
+                      <button
+                        type="button"
+                        className="text-left text-slate-700 hover:text-slate-900 hover:underline focus:outline-none focus-visible:ring focus-visible:ring-gray-400 rounded"
+                        onClick={() => {
+                          setSelectedEnrollment(e);
+                          setDetailOpen(true);
+                        }}
+                      >
+                        {e.name}
+                      </button>
+                    </td>
                     <td className="py-2 pr-4">{e.dept}</td>
                     <td className="py-2 pr-4">{e.email}</td>
                     <td className="py-2 pr-4">
@@ -275,6 +395,119 @@ export default function CourseProgress() {
           )}
         </div>
       </div>
+
+      {detailOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={handleCloseDetail} />
+          <div className="relative z-10 w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <div>
+                <div className="text-sm text-gray-500">수강자 상세</div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {selectedEnrollment?.name ?? "수강자"}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="text-sm text-gray-500 hover:text-gray-800"
+                onClick={handleCloseDetail}
+              >
+                닫기
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-6 max-h-[70vh] overflow-y-auto">
+              {detailLoading && (
+                <div className="text-sm text-gray-500">상세 정보를 불러오는 중입니다…</div>
+              )}
+              {detailError && (
+                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  {detailError}
+                </div>
+              )}
+
+              <section className="space-y-3">
+                <h3 className="text-sm font-semibold text-gray-700">직원 정보</h3>
+                <div className="rounded-xl border border-slate-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 grid grid-cols-1 sm:grid-cols-2 gap-y-2">
+                  <div>
+                    <span className="text-gray-500">사번</span>
+                    <div className="font-medium text-gray-800">
+                      {employeeDetail?.emp_no ?? selectedEnrollment?.empNo ?? "-"}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">부서</span>
+                    <div className="font-medium text-gray-800">
+                      {employeeDetail?.dept ?? selectedEnrollment?.dept ?? "-"}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">이름</span>
+                    <div className="font-medium text-gray-800">
+                      {employeeDetail?.name ?? selectedEnrollment?.name ?? "-"}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">이메일</span>
+                    <div className="font-medium text-gray-800 break-all">
+                      {employeeDetail?.email ?? selectedEnrollment?.email ?? "-"}
+                    </div>
+                  </div>
+                  {employeeDetail?.phone && (
+                    <div>
+                      <span className="text-gray-500">연락처</span>
+                      <div className="font-medium text-gray-800">{employeeDetail.phone}</div>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <h3 className="text-sm font-semibold text-gray-700">AI 평가</h3>
+                {evaluationDetail ? (
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-gray-600 space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">모션</span>
+                      <span className="font-medium text-gray-800">
+                        {evaluationDetail?.evaluation?.evaluator_motion_name ??
+                          evaluationDetail?.motionName ??
+                          "-"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">점수</span>
+                      <span className="font-semibold text-gray-900">
+                        {evaluationDetail?.evaluation?.score ?? evaluationDetail?.score ?? "-"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">상세</span>
+                      <span className="text-right text-gray-700">
+                        {evaluationDetail?.detail ?? evaluationDetail?.message ?? "-"}
+                      </span>
+                    </div>
+                    {evaluationDetail?.evaluation?.normalized_distance !== undefined && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">정규화 거리</span>
+                        <span className="text-gray-800">
+                          {evaluationDetail.evaluation.normalized_distance}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-sm text-gray-500 text-center">
+                    {detailLoading
+                      ? "평가 정보를 불러오는 중입니다…"
+                      : selectedEnrollment?.empNo
+                      ? "평가 데이터가 없습니다."
+                      : "사번 정보가 없어 평가 데이터를 조회할 수 없습니다."}
+                  </div>
+                )}
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

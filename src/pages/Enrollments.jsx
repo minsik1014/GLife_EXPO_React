@@ -9,9 +9,6 @@ function makeRow() {
   return {
     key: uuid,
     employeeId: "",
-    name: "",
-    dept: "",
-    email: "",
   };
 }
 
@@ -27,7 +24,6 @@ export default function Enrollments() {
   const [courseId, setCourseId] = useState("");
   const [loadingCourses, setLoadingCourses] = useState(false);
   const [rows, setRows] = useState(() => [makeRow()]);
-  const [statusValue, setStatusValue] = useState("enrolled"); // GLife 명세: status 기본값
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -99,16 +95,9 @@ export default function Enrollments() {
       return;
     }
 
-    const payloadRows = rows
-      .map((row) => ({
-        employeeId: row.employeeId.trim(),
-        name: row.name.trim(),
-        dept: row.dept.trim(),
-        email: row.email.trim(),
-      }))
-      .filter((row) => row.employeeId);
+    const employeeIds = rows.map((row) => row.employeeId.trim()).filter(Boolean);
 
-    if (!payloadRows.length) {
+    if (!employeeIds.length) {
       setError("최소 한 명 이상의 수강자를 입력해주세요.");
       return;
     }
@@ -123,12 +112,10 @@ export default function Enrollments() {
         method: "POST",
         auth: true,
         body: {
-          employee_ids: payloadRows.map((row) => row.employeeId),
-          status: statusValue || undefined, // 명세 기본값은 enrolled, 필요 시 선택값 사용
+          employee_ids: employeeIds,
         },
       });
       setRows([makeRow()]);
-      setStatusValue("enrolled");
       setMessage("수강자 등록이 완료되었습니다.");
     } catch (err) {
       console.error(err);
@@ -200,22 +187,7 @@ export default function Enrollments() {
           </button>
         </div>
 
-        <div className="bg-white rounded-2xl shadow p-4 space-y-3">
-          <div className="text-sm text-gray-600 font-medium">등록 상태</div>
-          <p className="text-xs text-gray-500">
-            {/* GLife 명세서 3.3: status 필드 예시 → "enrolled" 등 */}
-            전송 시 사용할 status 값을 지정하세요. 비워두면 기본값(enrolled)로 처리됩니다.
-          </p>
-          <input
-            type="text"
-            className="w-full border rounded-lg px-3 py-2 text-sm"
-            value={statusValue}
-            onChange={(e) => setStatusValue(e.target.value)}
-            placeholder="enrolled"
-          />
-        </div>
-
-        <div className="bg-white rounded-2xl shadow overflow-hidden">
+        <div className="bg-white rounded-2xl shadow overflow-hidden max-w-lg mx-auto">
           <div className="flex items-center justify-between px-4 py-3 border-b">
             <div className="font-medium">수강자 입력</div>
             <button
@@ -227,13 +199,10 @@ export default function Enrollments() {
             </button>
           </div>
           <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
+            <table className="w-full text-sm table-fixed">
               <thead className="bg-gray-100 text-left text-gray-500">
                 <tr>
-                  <th className="px-4 py-2 w-40">사번 / ID *</th>
-                  <th className="px-4 py-2 w-40">이름</th>
-                  <th className="px-4 py-2 w-48">부서</th>
-                  <th className="px-4 py-2 w-56">이메일</th>
+                  <th className="px-4 py-2 w-[220px]">사번 / ID *</th>
                   <th className="px-4 py-2 w-20 text-center">삭제</th>
                 </tr>
               </thead>
@@ -248,33 +217,6 @@ export default function Enrollments() {
                         value={row.employeeId}
                         onChange={(e) => updateRow(row.key, "employeeId", e.target.value)}
                         required={!rows.some((r) => r.key !== row.key && r.employeeId.trim())}
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="text"
-                        className="w-full border rounded-lg px-3 py-2 text-sm"
-                        placeholder="홍길동"
-                        value={row.name}
-                        onChange={(e) => updateRow(row.key, "name", e.target.value)}
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="text"
-                        className="w-full border rounded-lg px-3 py-2 text-sm"
-                        placeholder="안전관리팀"
-                        value={row.dept}
-                        onChange={(e) => updateRow(row.key, "dept", e.target.value)}
-                      />
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="email"
-                        className="w-full border rounded-lg px-3 py-2 text-sm"
-                        placeholder="user@example.com"
-                        value={row.email}
-                        onChange={(e) => updateRow(row.key, "email", e.target.value)}
                       />
                     </td>
                     <td className="px-4 py-2 text-center">
@@ -293,9 +235,8 @@ export default function Enrollments() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs text-gray-500">
-          <div>* 사번 또는 직원 ID는 필수입니다. 이름/부서/이메일은 참고용이며 API에는 employee_ids만 전송됩니다.</div>
-          <div>※ GLife 명세 3.3과 달리 커스텀 필드가 필요하면 서버에서 확장 후 본 폼을 조정하세요.</div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs text-gray-500">
+          <div>* 사번 또는 직원 ID만 입력하면 됩니다. 입력된 값은 employee_ids로 전송됩니다.</div>
         </div>
 
         <div className="flex gap-2 justify-end">

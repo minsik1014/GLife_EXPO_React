@@ -105,8 +105,34 @@ export default function UploadExcel(){
       </div>
 
       <div className="bg-white rounded-2xl shadow p-4">
-        <input type="file" accept=".xlsx,.xls" onChange={onFileChange} />
-        {fileName && <div className="text-sm text-gray-500 mt-2">선택된 파일: {fileName}</div>}
+        <label
+          htmlFor="excel-upload-input"
+          className={`relative flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-6 py-8 text-sm transition ${
+            fileName ? "border-gray-400 bg-gray-50" : "border-gray-200 hover:border-gray-400"
+          }`}
+        >
+          <span className="text-gray-600 font-medium">
+            {fileName ? "파일이 선택되었습니다." : "엑셀 파일을 선택하세요"}
+          </span>
+          <span className="rounded-full bg-gray-900 px-4 py-1 text-xs font-semibold text-white">
+            파일 선택
+          </span>
+          <span className="text-xs text-gray-500">
+            지원 형식: .xlsx, .xls
+          </span>
+          {fileName && (
+            <span className="mt-2 text-xs text-gray-500">
+              현재 파일: {fileName}
+            </span>
+          )}
+        </label>
+        <input
+          id="excel-upload-input"
+          type="file"
+          accept=".xlsx,.xls"
+          onChange={onFileChange}
+          className="sr-only"
+        />
 
         {error && (
           <div className="mt-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl p-3">{error}</div>
